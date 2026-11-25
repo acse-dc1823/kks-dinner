@@ -1,5 +1,5 @@
-import { compute, parseEuros } from './ledger.js';
-import * as S from './store.js';
+import { compute, parseEuros } from './ledger.js?v=4';
+import * as S from './store.js?v=4';
 
 const $ = (sel, el = document) => el.querySelector(sel);
 const esc = (s) =>
@@ -148,11 +148,14 @@ function render() {
     d.people.map((p) => `<option value="${p.id}" ${p.id === st.me ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
 
   const left = c.totalFine - c.totalSpent;
+  const each = money(Math.round(Math.abs(c.adjust) / d.people.length)); // equal share of the gap
   const pct = c.totalFine ? Math.min(100, (c.totalSpent / c.totalFine) * 100) : 0;
   $('#stats').innerHTML = `
     <div class="tile"><span>Pot</span><b>${money(c.totalFine)}</b><small>${d.people.length} people's fines</small></div>
     <div class="tile"><span>Spent</span><b>${money(c.totalSpent)}</b><small>${d.expenses.length} purchase${d.expenses.length === 1 ? '' : 's'}</small></div>
-    <div class="tile ${left < 0 ? 'neg' : 'accent'}"><span>${left < 0 ? 'Over by' : 'Left'}</span><b>${money(left)}</b><small>${left < 0 ? 'split equally' : 'still to spend'}</small></div>
+    <div class="tile ${left < 0 ? 'neg' : 'accent'}"><span>${left < 0 ? 'Over by' : c.final ? (left ? 'Unspent' : 'Spot on') : 'Left'}</span><b>${money(left)}</b><small>${
+      left < 0 ? `${each} more each` : c.final ? (left ? `${each} less each` : 'cost = pot') : 'still to spend'
+    }</small></div>
     <div class="bar" role="progressbar" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>`;
 
   $('#readonly').hidden = !ro || st.showSetup;
@@ -162,8 +165,9 @@ function render() {
   const potRows = c.rows
     .map((r) => {
       const bits = [];
-      if (r.paidIn) bits.push(`${money(r.paidIn)} ${r.isHolder ? 'set aside' : `paid to ${esc(holderName)}`}`);
+      if (r.paidIn) bits.push(`${money(r.paidIn)} ${r.isHolder ? 'in the pot' : `paid to ${esc(holderName)}`}`);
       if (r.spent) bits.push(`${money(r.spent)} on food`);
+      if (r.share) bits.push(r.share > 0 ? `+${money(r.share)} extra cost` : `−${money(r.share)} unspent pot`);
       if (!r.isHolder && r.sent) bits.push(`${money(r.sent)} settled`);
       let owes = `<span class="pill ok">✓</span>`;
       if (r.owes) owes = `<span class="amt owe">${money(r.owes)}</span>`;
@@ -211,9 +215,21 @@ function render() {
         )
         .join('')
     : `<li class="empty">Nothing bought yet. Add the first item above.</li>`;
-  $('#shop-total').innerHTML = `${money(c.totalSpent)} spent · <b>${left < 0 ? `${money(left)} over` : `${money(left)} left`}</b> of ${money(c.totalFine)}`;
+  $('#shop-total').innerHTML = `${money(c.totalSpent)} spent · <b>${money(left)} ${left < 0 ? 'over' : c.final ? 'unspent' : 'left'}</b> of ${money(c.totalFine)}`;
+  const doneBtn = $('#done-btn');
+  doneBtn.disabled = ro;
+  doneBtn.classList.toggle('sure', st.confirm === 'done');
+  doneBtn.textContent =
+    st.confirm === 'done' ? 'Tap again to confirm' : d.done ? 'Reopen shopping' : 'Shopping done → final split';
+  $('#done-hint').textContent = d.done
+    ? 'Shopping is closed: section 3 shows the final transfers.'
+    : 'When all the food is bought, close shopping to get the final transfers.';
 
   // 3. settle up
+  $('#settle-lead').textContent = c.final
+    ? 'Final transfers. After these, everyone has paid exactly their share. Tap “Mark paid” once the money is sent.'
+    : 'Who pays back the people who bought food. Tap “Mark paid” once the money is sent.';
+
   const tr = c.transfers;
   $('#transfers').innerHTML = tr.length
     ? tr
@@ -229,23 +245,41 @@ function render() {
 
   const notes = [];
   const h = c.rows.find((r) => r.isHolder);
-  if (h && h.cashNow)
+  const H = esc(holderName);
+  if (c.final) {
     notes.push(
-      tr.length
-        ? `${esc(holderName)} pays first, from the ${money(h.cashNow)} pot cash he holds. After that, whoever still owes the most pays.`
-        : `Nothing to pay yet. When someone buys food, ${esc(holderName)}'s ${money(h.cashNow)} pot cash pays them back first.`,
+      c.adjust < 0
+        ? `The dinner cost ${money(c.totalSpent)}, ${money(c.adjust)} under the ${money(c.totalFine)} pot, so everyone pays ${each} less than their fine.`
+        : c.adjust > 0
+          ? `The dinner cost ${money(c.totalSpent)}, ${money(c.adjust)} over the ${money(c.totalFine)} pot, so everyone pays ${each} more than their fine.`
+          : `The dinner cost exactly the pot, so everyone pays exactly their fine.`,
     );
-  if (c.totalOwed && !c.overspend)
-    notes.push(`Fines nobody needs yet stay as “owes” in the pot table, until more food is bought.`);
-  if (c.overspend)
-    notes.push(`Food went ${money(c.overspend)} over the pot. The extra is split equally (about ${money(Math.round(c.overspend / d.people.length))} each) and is already included.`);
-  if (h && h.owes)
-    notes.push(`${esc(holderName)}'s own ${money(h.owes)} needs no transfer: he just adds it to the pot, then updates it in “Edit fines”.`);
+    const out = tr.filter((t) => t.from === h?.id).reduce((s, t) => s + t.amount, 0);
+    if (h && h.cashNow)
+      notes.push(
+        out < h.cashNow
+          ? `${H} holds ${money(h.cashNow)} of pot cash: he keeps ${money(h.cashNow - out)} (his own share back)${out ? ` and hands out ${money(out)}` : ''}.`
+          : `${H} hands out the ${money(h.cashNow)} pot cash he holds${out > h.cashNow ? `, plus ${money(out - h.cashNow)} of his own` : ''}.`,
+      );
+  } else {
+    if (h && h.cashNow)
+      notes.push(
+        tr.length
+          ? `${H} pays first, from the ${money(h.cashNow)} pot cash he holds. After that, whoever still owes the most pays.`
+          : `Nothing to pay yet. When someone buys food, ${H}'s ${money(h.cashNow)} pot cash pays them back first.`,
+      );
+    if (c.overspend)
+      notes.push(`Food is already ${money(c.overspend)} over the pot. The extra is split equally (${each} each) and is already included.`);
+    notes.push(`Once all the food is bought, press “Shopping done” in section 2. If the dinner cost less than the pot, everyone then pays the same amount less.`);
+    if (h && h.owes)
+      notes.push(`${H}'s own ${money(h.owes)} needs no transfer: he just adds it to the pot, then updates it in “Edit fines”.`);
+  }
   $('#settle-notes').innerHTML = notes.map((n) => `<p>${n}</p>`).join('');
 
   // Holder with cash shows what he holds; everyone else what they are owed / still owe.
   const shown = c.rows.map((r) => {
-    if (r.isHolder && r.net <= 0) return { r, v: r.cashNow, cls: 'hold', label: `holds ${money(r.cashNow)}` };
+    if (r.isHolder && r.net <= 0 && !c.final) return { r, v: r.cashNow, cls: 'hold', label: `holds ${money(r.cashNow)}` };
+    if (r.isHolder && r.net < 0) return { r, v: r.net, cls: 'hold', label: `hands out ${money(r.net)}` };
     if (r.net > 0) return { r, v: r.net, cls: 'get', label: `is owed ${money(r.net)}` };
     if (r.net < 0) return { r, v: r.net, cls: 'owe', label: `owes ${money(r.net)}` };
     return { r, v: 0, cls: '', label: 'square' };
@@ -254,7 +288,7 @@ function render() {
   $('#balances').innerHTML = shown
     .map(({ r, v, cls, label }) => {
       const w = (Math.abs(v) / maxAbs) * 50;
-      const side = cls === 'get' || cls === 'hold' ? `left:50%;width:${w}%` : `right:50%;width:${w}%`;
+      const side = v >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%`;
       return `<li class="${r.id === st.me ? 'me' : ''}">
         <span class="who">${esc(r.name)}</span>
         <span class="track"><i class="${cls}" style="${side}"></i></span>
@@ -314,6 +348,11 @@ document.addEventListener('click', (ev) => {
   if (act === 'exp-del') {
     if (!askConfirm(b.dataset.id)) return;
     return save((d) => (d.expenses = d.expenses.filter((e) => e.id !== b.dataset.id)), 'Deleted');
+  }
+  if (act === 'done-toggle') {
+    if (!askConfirm('done')) return;
+    const done = !st.data.done;
+    return save((d) => (d.done = done), done ? 'Final split ready' : 'Shopping reopened');
   }
   if (act === 'pay-del') {
     if (!askConfirm(b.dataset.id)) return;

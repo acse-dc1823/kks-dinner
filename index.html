@@ -121,6 +121,8 @@ ul.list li.empty { color: var(--muted); justify-content: center; padding: 18px 0
 .x.sure { width: auto; padding: 0 10px; font-size: 13px; font-weight: 650; background: var(--owe-bg); color: var(--owe); }
 #shop-total { text-align: right; font-size: 14px; color: var(--muted); margin-top: 10px; }
 #shop-total b { color: var(--ink); }
+.done-row { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); font-size: 13px; color: var(--muted); }
+.btn.sure { background: var(--owe-bg); color: var(--owe); border-color: transparent; }
 
 #transfers li .flow { flex: 1; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; min-width: 0; }
 #transfers .arrow { color: var(--muted); font-size: 13px; }
@@ -201,11 +203,12 @@ footer button { background: none; border: 0; color: var(--ink); text-decoration:
     </form>
     <ul id="shop-list" class="list"></ul>
     <div id="shop-total"></div>
+    <div class="done-row"><span id="done-hint"></span><button id="done-btn" class="btn ghost small" data-act="done-toggle"></button></div>
   </section>
 
   <section class="card">
     <h2><span class="n">3</span>Settle up</h2>
-    <p class="lead">Who pays back the people who bought food. Tap “Mark paid” once the money is sent.</p>
+    <p class="lead" id="settle-lead"></p>
     <ul id="transfers" class="list"></ul>
     <div id="settle-notes"></div>
 
@@ -228,6 +231,6 @@ footer button { background: none; border: 0; color: var(--ink); text-decoration:
   <footer>Data is encrypted with the group password before it is saved. <button data-act="logout">Log out</button></footer>
 </main>
 
-<script type="module" src="app.js"></script>
+<script type="module" src="app.js?v=4"></script>
 </body>
 </html>

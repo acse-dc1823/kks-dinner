@@ -5,10 +5,12 @@
 // transfers (sent_i / recv_i). The holder physically keeps all paid-in cash,
 // so that cash counts against the holder's own balance.
 //
-// Money only moves to pay back people who bought food. The holder's pot cash
-// pays first; after that, whoever still owes the most. Fines not needed yet
-// stay owed (section 1). If spending goes above the pot, the excess is split
-// equally between everyone.
+// While shopping: money only moves to pay back people who bought food. The
+// holder's pot cash pays first; after that, whoever still owes the most.
+// Once shopping is done (data.done): the gap between the dinner cost and the
+// pot is shared equally (under the pot: everyone pays the same amount less;
+// over: the same amount more) and everyone settles completely.
+// Going over the pot is shared equally even while shopping.
 
 export function compute(data) {
   const people = data.people;
@@ -30,12 +32,16 @@ export function compute(data) {
   const totalSpent = Object.values(spent).reduce((s, v) => s + v, 0);
   const leftover = Math.max(0, totalFine - totalSpent);
   const overspend = Math.max(0, totalSpent - totalFine);
+  const final = Boolean(data.done);
 
-  const base = Math.floor(overspend / people.length);
-  let extraCents = overspend - base * people.length;
+  // Equal share of the gap between cost and pot; leftover cents go to the first people.
+  const adjust = final ? totalSpent - totalFine : overspend;
+  const sign = adjust < 0 ? -1 : 1;
+  const base = Math.floor(Math.abs(adjust) / people.length);
+  let extraCents = Math.abs(adjust) - base * people.length;
 
   const rows = people.map((p) => {
-    const share = base + (extraCents-- > 0 ? 1 : 0);
+    const share = sign * (base + (extraCents-- > 0 ? 1 : 0)); // + pays more, - pays less
     const own = p.paidIn + spent[p.id] - p.fine - share; // fine status, ignoring transfers
     const isHolder = p.id === holder;
     // Holder: pot cash he still has. Paying out beyond it comes from his own pocket,
@@ -50,7 +56,7 @@ export function compute(data) {
       spent: spent[p.id],
       sent: sent[p.id],
       recv: recv[p.id],
-      overspendShare: share,
+      share,
       owes: Math.max(0, -personal), // section 1: still owes towards their fine
       credit: Math.max(0, personal), // still to get back
       net, // section 3: >0 is owed, <0 could pay up to this
@@ -65,6 +71,8 @@ export function compute(data) {
     totalSpent,
     leftover,
     overspend,
+    final,
+    adjust,
     totalOwed: rows.reduce((s, r) => s + r.owes, 0),
     transfers: settle(rows, holder),
   };
