@@ -5,8 +5,10 @@
 // transfers (sent_i / recv_i). The holder physically keeps all paid-in cash,
 // so that cash counts against the holder's own balance.
 //
-// If spending is below the pot, the leftover stays with the holder.
-// If spending is above the pot, the excess is split equally between everyone.
+// Money only moves to pay back people who bought food. The holder's pot cash
+// pays first; after that, whoever still owes the most. Fines not needed yet
+// stay owed (section 1). If spending goes above the pot, the excess is split
+// equally between everyone.
 
 export function compute(data) {
   const people = data.people;
@@ -36,10 +38,12 @@ export function compute(data) {
     const share = base + (extraCents-- > 0 ? 1 : 0);
     const own = p.paidIn + spent[p.id] - p.fine - share; // fine status, ignoring transfers
     const isHolder = p.id === holder;
-    const personal = isHolder ? own : own + sent[p.id] - recv[p.id];
-    const net = isHolder
-      ? own - cashHeld + sent[p.id] - recv[p.id] + leftover
-      : personal;
+    // Holder: pot cash he still has. Paying out beyond it comes from his own pocket,
+    // which counts towards his fine.
+    const cashNow = isHolder ? cashHeld + recv[p.id] - sent[p.id] : 0;
+    const personal = isHolder ? own + Math.max(0, -cashNow) : own + sent[p.id] - recv[p.id];
+    // holder: negative net = pot cash (plus own unpaid fine) available to pay out
+    const net = isHolder ? own - cashNow : personal;
     return {
       ...p,
       isHolder,
@@ -49,7 +53,8 @@ export function compute(data) {
       overspendShare: share,
       owes: Math.max(0, -personal), // section 1: still owes towards their fine
       credit: Math.max(0, personal), // still to get back
-      net, // section 3: >0 receives, <0 pays
+      net, // section 3: >0 is owed, <0 could pay up to this
+      cashNow: Math.max(0, cashNow),
     };
   });
 
@@ -61,16 +66,25 @@ export function compute(data) {
     leftover,
     overspend,
     totalOwed: rows.reduce((s, r) => s + r.owes, 0),
-    transfers: settle(rows),
+    transfers: settle(rows, holder),
   };
 }
 
-// Greedy settlement: largest debtor pays largest creditor. At most n-1 transfers.
-export function settle(rows) {
+// Pays back everyone who is owed, and no more. Who pays: the holder first (pot
+// cash), then the biggest debtors. Then greedy matching, at most n-1 transfers.
+export function settle(rows, holder) {
   const cred = rows.filter((r) => r.net > 0).map((r) => ({ id: r.id, amt: r.net }));
-  const debt = rows.filter((r) => r.net < 0).map((r) => ({ id: r.id, amt: -r.net }));
   cred.sort((a, b) => b.amt - a.amt);
-  debt.sort((a, b) => b.amt - a.amt);
+  let need = cred.reduce((s, c) => s + c.amt, 0);
+  const candidates = rows.filter((r) => r.net < 0).map((r) => ({ id: r.id, amt: -r.net }));
+  candidates.sort((a, b) => (b.id === holder) - (a.id === holder) || b.amt - a.amt);
+  const debt = [];
+  for (const d of candidates) {
+    if (need <= 0) break;
+    const take = Math.min(d.amt, need);
+    debt.push({ id: d.id, amt: take });
+    need -= take;
+  }
   const out = [];
   let i = 0;
   let j = 0;

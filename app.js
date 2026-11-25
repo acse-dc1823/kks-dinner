@@ -225,28 +225,40 @@ function render() {
         </li>`,
         )
         .join('')
-    : `<li class="empty">All square. Nobody owes anybody.</li>`;
+    : `<li class="empty">Nobody needs paying back yet.</li>`;
 
   const notes = [];
-  if (c.leftover && tr.length)
-    notes.push(`${esc(holderName)} holds the pot (${money(c.cashHeld)} cash so far). The ${money(c.leftover)} not spent yet stays with him, which is why payments go to him.`);
+  const h = c.rows.find((r) => r.isHolder);
+  if (h && h.cashNow)
+    notes.push(
+      tr.length
+        ? `${esc(holderName)} pays first, from the ${money(h.cashNow)} pot cash he holds. After that, whoever still owes the most pays.`
+        : `Nothing to pay yet. When someone buys food, ${esc(holderName)}'s ${money(h.cashNow)} pot cash pays them back first.`,
+    );
+  if (c.totalOwed && !c.overspend)
+    notes.push(`Fines nobody needs yet stay as “owes” in the pot table, until more food is bought.`);
   if (c.overspend)
     notes.push(`Food went ${money(c.overspend)} over the pot. The extra is split equally (about ${money(Math.round(c.overspend / d.people.length))} each) and is already included.`);
-  const h = c.rows.find((r) => r.isHolder);
   if (h && h.owes)
     notes.push(`${esc(holderName)}'s own ${money(h.owes)} needs no transfer: he just adds it to the pot, then updates it in “Edit fines”.`);
   $('#settle-notes').innerHTML = notes.map((n) => `<p>${n}</p>`).join('');
 
-  const maxAbs = Math.max(1, ...c.rows.map((r) => Math.abs(r.net)));
-  $('#balances').innerHTML = c.rows
-    .map((r) => {
-      const w = (Math.abs(r.net) / maxAbs) * 50;
-      const side = r.net >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%`;
-      const label = r.net > 0 ? `gets ${money(r.net)}` : r.net < 0 ? `pays ${money(r.net)}` : 'square';
+  // Holder with cash shows what he holds; everyone else what they are owed / still owe.
+  const shown = c.rows.map((r) => {
+    if (r.isHolder && r.net <= 0) return { r, v: r.cashNow, cls: 'hold', label: `holds ${money(r.cashNow)}` };
+    if (r.net > 0) return { r, v: r.net, cls: 'get', label: `is owed ${money(r.net)}` };
+    if (r.net < 0) return { r, v: r.net, cls: 'owe', label: `owes ${money(r.net)}` };
+    return { r, v: 0, cls: '', label: 'square' };
+  });
+  const maxAbs = Math.max(1, ...shown.map((s) => Math.abs(s.v)));
+  $('#balances').innerHTML = shown
+    .map(({ r, v, cls, label }) => {
+      const w = (Math.abs(v) / maxAbs) * 50;
+      const side = cls === 'get' || cls === 'hold' ? `left:50%;width:${w}%` : `right:50%;width:${w}%`;
       return `<li class="${r.id === st.me ? 'me' : ''}">
         <span class="who">${esc(r.name)}</span>
-        <span class="track"><i class="${r.net >= 0 ? 'get' : 'owe'}" style="${side}"></i></span>
-        <span class="amt ${r.net > 0 ? 'get' : r.net < 0 ? 'owe' : ''}">${label}</span>
+        <span class="track"><i class="${cls}" style="${side}"></i></span>
+        <span class="amt ${cls}">${label}</span>
       </li>`;
     })
     .join('');
