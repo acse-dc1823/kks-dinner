@@ -1,5 +1,5 @@
-import { compute, parseEuros } from './ledger.js?v=4';
-import * as S from './store.js?v=4';
+import { compute, parseEuros } from './ledger.js?v=5';
+import * as S from './store.js?v=5';
 
 const $ = (sel, el = document) => el.querySelector(sel);
 const esc = (s) =>
@@ -258,16 +258,25 @@ function render() {
     if (h && h.cashNow)
       notes.push(
         out < h.cashNow
-          ? `${H} holds ${money(h.cashNow)} of pot cash: he keeps ${money(h.cashNow - out)} (his own share back)${out ? ` and hands out ${money(out)}` : ''}.`
+          ? `${H} holds ${money(h.cashNow)} of pot cash. He keeps ${money(h.cashNow - out)}, which he is owed himself (${[
+              h.spent ? 'the food he bought' : '',
+              c.adjust < 0 ? 'his share of the unspent pot' : '',
+            ].filter(Boolean).join(' and ') || 'his own money back'})${out ? `, and hands out ${money(out)}` : ''}.`
           : `${H} hands out the ${money(h.cashNow)} pot cash he holds${out > h.cashNow ? `, plus ${money(out - h.cashNow)} of his own` : ''}.`,
       );
+    if (c.adjust % (100 * d.people.length))
+      notes.push(`The amounts have cents because ${money(c.adjust)} split between ${d.people.length} is ${each} each.`);
   } else {
-    if (h && h.cashNow)
+    if (h && h.cashNow) {
+      const avail = Math.max(0, -h.net); // pot cash left once he has paid himself back
+      const keep = Math.max(0, h.cashNow - avail);
+      const kept = keep ? ` (${money(h.cashNow)} held, minus ${money(keep)} he keeps for the food he bought)` : '';
       notes.push(
         tr.length
-          ? `${H} pays first, from the ${money(h.cashNow)} pot cash he holds. After that, whoever still owes the most pays.`
-          : `Nothing to pay yet. When someone buys food, ${H}'s ${money(h.cashNow)} pot cash pays them back first.`,
+          ? `${H} pays first, from the ${money(avail)} pot cash he has${kept}. After that, whoever still owes the most pays.`
+          : `Nothing to pay yet. When someone buys food, ${H}'s ${money(avail)} pot cash${kept} pays them back first.`,
       );
+    }
     if (c.overspend)
       notes.push(`Food is already ${money(c.overspend)} over the pot. The extra is split equally (${each} each) and is already included.`);
     notes.push(`Once all the food is bought, press “Shopping done” in section 2. If the dinner cost less than the pot, everyone then pays the same amount less.`);
@@ -278,7 +287,8 @@ function render() {
 
   // Holder with cash shows what he holds; everyone else what they are owed / still owe.
   const shown = c.rows.map((r) => {
-    if (r.isHolder && r.net <= 0 && !c.final) return { r, v: r.cashNow, cls: 'hold', label: `holds ${money(r.cashNow)}` };
+    // pot cash he can still hand out = cash held minus what he is owed himself (e.g. his own food)
+    if (r.isHolder && r.net <= 0 && !c.final) return { r, v: -r.net, cls: 'hold', label: `${money(r.net)} pot cash` };
     if (r.isHolder && r.net < 0) return { r, v: r.net, cls: 'hold', label: `hands out ${money(r.net)}` };
     if (r.net > 0) return { r, v: r.net, cls: 'get', label: `is owed ${money(r.net)}` };
     if (r.net < 0) return { r, v: r.net, cls: 'owe', label: `owes ${money(r.net)}` };
