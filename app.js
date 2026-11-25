@@ -229,14 +229,12 @@ function render() {
 
   const notes = [];
   if (c.leftover && tr.length)
-    notes.push(`${esc(holderName)} keeps the pot. The ${money(c.leftover)} not spent yet stays with him, so it is included in what is paid to him.`);
+    notes.push(`${esc(holderName)} holds the pot (${money(c.cashHeld)} cash so far). The ${money(c.leftover)} not spent yet stays with him, which is why payments go to him.`);
   if (c.overspend)
-    notes.push(`Food went ${money(c.overspend)} over the pot. That extra is split equally (about ${money(Math.round(c.overspend / d.people.length))} each) and already included.`);
-  if (c.cashHeld)
-    notes.push(`${esc(holderName)}'s line counts the ${money(c.cashHeld)} cash he already holds.`);
+    notes.push(`Food went ${money(c.overspend)} over the pot. The extra is split equally (about ${money(Math.round(c.overspend / d.people.length))} each) and is already included.`);
   const h = c.rows.find((r) => r.isHolder);
   if (h && h.owes)
-    notes.push(`${esc(holderName)} also still owes ${money(h.owes)} of his own fine to the pot he holds. No transfer needed for that: once he puts it aside, update his amount in “Edit fines”.`);
+    notes.push(`${esc(holderName)}'s own ${money(h.owes)} needs no transfer: he just adds it to the pot, then updates it in “Edit fines”.`);
   $('#settle-notes').innerHTML = notes.map((n) => `<p>${n}</p>`).join('');
 
   const maxAbs = Math.max(1, ...c.rows.map((r) => Math.abs(r.net)));
